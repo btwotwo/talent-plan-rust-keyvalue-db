@@ -1,0 +1,30 @@
+name: kvs
+version: "0"
+author: author
+subcommands: 
+  - set:
+      about: "Set value of a string key to a string"
+      args: 
+        - KEY:
+            index: 1
+            required: true
+            help: must be a valid string
+        - VALUE:
+            index: 2
+            required: true
+            help: value for the provided key
+  - get: 
+      about: "Get the string value of a given string key"
+      args: 
+        - KEY:
+            index: 1
+            required: true
+            help: key of the required value
+  - rm:
+      about: "Remove a given key"
+      args: 
+          - KEY:
+              index: 1
+              required: true
+              help: key of the required value 
+
