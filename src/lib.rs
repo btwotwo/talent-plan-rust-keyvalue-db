@@ -1,66 +1,27 @@
 //! Simple key-value store for education purposes
 // #![deny(missing_docs)]
-use failure;
-use failure::{Backtrace, Context, Fail};
-use std::collections::HashMap;
-use std::fmt;
-use std::fmt::Display;
-use std::path;
+pub mod err;
+pub use err::Result;
 
-#[derive(Default)]
+use std::fs::File;
+use std::path;
+use std::sync::RwLock;
+use std::io::{BufReader, BufWriter};
+
+use serde::{Deserialize, Serialize};
+use rmp_serde::{Serializer, Deserializer};
+
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+struct SetCommand {
+    key: String,
+    value: String,
+}
+
 /// Simple key-value store
 pub struct KvStore {
-    data: HashMap<String, String>,
+    /// File which store stores logs into
+    db_file: RwLock<File>,
 }
-
-#[derive(Debug)]
-pub struct KvStoreError {
-    inner: Context<KvStoreErrorKind>,
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Fail)]
-pub enum KvStoreErrorKind {
-    #[fail(display = "General error")]
-    General,
-}
-
-impl Fail for KvStoreError {
-    fn cause(&self) -> Option<&dyn Fail> {
-        self.inner.cause()
-    }
-
-    fn backtrace(&self) -> Option<&Backtrace> {
-        self.inner.backtrace()
-    }
-}
-
-impl Display for KvStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        Display::fmt(&self.inner, f)
-    }
-}
-
-impl KvStoreError {
-    pub fn kind(&self) -> KvStoreErrorKind {
-        *self.inner.get_context()
-    }
-}
-
-impl From<KvStoreErrorKind> for KvStoreError {
-    fn from(kind: KvStoreErrorKind) -> KvStoreError {
-        KvStoreError {
-            inner: Context::new(kind),
-        }
-    }
-}
-
-impl From<Context<KvStoreErrorKind>> for KvStoreError {
-    fn from(inner: Context<KvStoreErrorKind>) -> KvStoreError {
-        KvStoreError { inner }
-    }
-}
-
-pub type Result<TRes> = std::result::Result<TRes, KvStoreError>;
 
 impl KvStore {
     /// Create a new instance of KvStore
@@ -69,8 +30,19 @@ impl KvStore {
     /// use kvs::KvStore;
     /// let kvstore = KvStore::new();
     /// ```
-    pub fn new() -> Self {
-        Default::default()
+    pub fn open(path: impl Into<path::PathBuf>) -> Result<KvStore> {
+        use std::fs::OpenOptions;
+
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path.into())?;
+        let locked_file = RwLock::new(file);
+
+        Ok(KvStore {
+            db_file: locked_file,
+        })
     }
 
     /// Sets the `value` with the given `key`
@@ -81,8 +53,10 @@ impl KvStore {
     /// kvstore.set("foo".to_string(), "bar".to_string())
     /// ```
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        self.data.insert(key, value);
-        Ok(())
+        let mut file = self.db_file.write();
+        
+        let command = SetCommand {key, value};
+        let command = command.serialize()
     }
 
     /// Gets value for the given `key`
@@ -97,7 +71,7 @@ impl KvStore {
     /// # Note
     /// Returns cloned value.
     pub fn get(&self, key: String) -> Result<Option<String>> {
-        Ok(self.data.get(&key).cloned())
+        unimplemented!()
     }
 
     /// Removes value with the given `key`
@@ -109,11 +83,6 @@ impl KvStore {
     /// kvstore.remove("foo".to_string());
     /// assert_eq!(kvstore.get("foo".to_string()), None);
     pub fn remove(&mut self, key: String) -> Result<()> {
-        self.data.remove(&key);
-        Ok(())
-    }
-
-    pub fn open(path: impl Into<path::PathBuf>) -> Result<KvStore> {
         unimplemented!()
     }
 }
