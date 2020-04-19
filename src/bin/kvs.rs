@@ -1,5 +1,12 @@
 use clap::*;
+use kvs::KvStore;
 use std::process;
+
+macro_rules! sub {
+    ($name:ident) => {
+        (stringify!($name), Some($name))
+    };
+}
 
 fn main() {
     let yaml = load_yaml!("cli.yml");
@@ -10,10 +17,18 @@ fn main() {
         .author(crate_authors!())
         .get_matches();
 
-    match matches.subcommand_name() {
-        Some("get") => exit("unimplemented"),
-        Some("set") => exit("unimplemented"),
-        Some("rm") => exit("unimplemented"),
+    let database_path = "foo.db";
+    let mut store = KvStore::open(database_path).unwrap();
+
+    match matches.subcommand() {
+        sub!(get) => exit("unimplemented"),
+        sub!(set) => {
+            let key = set.value_of("KEY").unwrap();
+            let val = set.value_of("VALUE").unwrap();
+
+            store.set(key.to_owned(), val.to_owned()).unwrap();
+        }
+        sub!(rm) => exit("unimplemented"),
 
         _ => exit("Invalid command"),
     }

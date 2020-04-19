@@ -6,15 +6,28 @@ pub use err::Result;
 use std::fs::File;
 use std::path;
 use std::sync::RwLock;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read, Write};
 
 use serde::{Deserialize, Serialize};
-use rmp_serde::{Serializer, Deserializer};
+use bson;
+use bson::Bson;
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
-struct SetCommand {
-    key: String,
-    value: String,
+enum Command {
+    #[serde(rename = "s")]
+    Set {
+        #[serde(rename = "k")]
+        key: String, 
+
+        #[serde(rename = "v")]
+        value: String
+    },
+
+    #[serde(rename = "r")]
+    Rm {
+        #[serde(rename = "k")]
+        key: String
+    }
 }
 
 /// Simple key-value store
@@ -24,18 +37,18 @@ pub struct KvStore {
 }
 
 impl KvStore {
-    /// Create a new instance of KvStore
+    /// Create a new instance of KvStore with log file in the specified location
     /// # Example
     /// ```rust
     /// use kvs::KvStore;
-    /// let kvstore = KvStore::new();
+    /// let kvstore = KvStore::new("foo.db");
     /// ```
     pub fn open(path: impl Into<path::PathBuf>) -> Result<KvStore> {
         use std::fs::OpenOptions;
 
         let file = OpenOptions::new()
             .read(true)
-            .write(true)
+            .append(true)
             .create(true)
             .open(path.into())?;
         let locked_file = RwLock::new(file);
@@ -49,14 +62,22 @@ impl KvStore {
     /// # Example
     /// ```rust
     /// # use kvs::KvStore;
-    /// let mut kvstore = KvStore::new();
+    /// let mut kvstore = KvStore::new("foo.db");
     /// kvstore.set("foo".to_string(), "bar".to_string())
     /// ```
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let mut file = self.db_file.write();
-        
-        let command = SetCommand {key, value};
-        let command = command.serialize()
+        use std::ops::DerefMut;
+        let mut file = self.db_file.write()?;
+        let command = match bson::to_bson(&Command::Set{key, value})? {
+            Bson::Document(doc) => doc,
+            _ => panic!("this shouldn't happen")
+        };
+
+        bson::encode_document(&mut file.deref_mut(), &command)?;
+
+        file.flush()?;
+
+        Ok(())
     }
 
     /// Gets value for the given `key`
@@ -78,11 +99,23 @@ impl KvStore {
     /// # Example
     /// ```rust
     /// # use kvs::KvStore;
-    /// let mut kvstore = KvStore::new();
+    /// let mut kvstore = KvStore::new("foo.db`");
     /// kvstore.set("foo".to_string(), "bar".to_string());
     /// kvstore.remove("foo".to_string());
     /// assert_eq!(kvstore.get("foo".to_string()), None);
     pub fn remove(&mut self, key: String) -> Result<()> {
-        unimplemented!()
+        todo!()
+        // use std::ops::DerefMut;
+        // let mut file = self.db_file.write()?;
+        // let command = match bson::to_bson(&Command::Set{key, value})? {
+        //     Bson::Document(doc) => doc,
+        //     _ => panic!("this shouldn't happen")
+        // };
+
+        // bson::encode_document(&mut file.deref_mut(), &command)?;
+
+        // file.flush()?;
+
+        // Ok(())
     }
 }

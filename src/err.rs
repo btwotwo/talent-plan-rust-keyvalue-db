@@ -2,7 +2,9 @@ use failure;
 use failure::{Backtrace, Context, Fail};
 use std::fmt;
 use std::fmt::Display;
+use std::fs::File;
 use std::io;
+use std::sync::{PoisonError, RwLockWriteGuard};
 
 #[derive(Debug)]
 pub struct KvStoreError {
@@ -16,6 +18,12 @@ pub enum KvStoreErrorKind {
 
     #[fail(display = "Error opening or writing to database")]
     DatabaseFileError,
+
+    #[fail(display = "Error serializing the command")]
+    SerializationError,
+
+    #[fail(display = "Error writing to the file. The file lock is poisoned")]
+    PoisonedLockError,
 }
 
 impl Fail for KvStoreError {
@@ -56,10 +64,19 @@ impl From<Context<KvStoreErrorKind>> for KvStoreError {
 
 impl From<io::Error> for KvStoreError {
     fn from(err: io::Error) -> KvStoreError {
-        KvStoreError {
-            inner: Context::new(KvStoreErrorKind::DatabaseFileError),
-        }
+        KvStoreErrorKind::DatabaseFileError.into()
     }
 }
 
+impl From<bson::EncoderError> for KvStoreError {
+    fn from(err: bson::EncoderError) -> KvStoreError {
+        KvStoreErrorKind::SerializationError.into()
+    }
+}
+
+impl From<PoisonError<RwLockWriteGuard<'_, File>>> for KvStoreError {
+    fn from(err: PoisonError<RwLockWriteGuard<'_, File>>) -> KvStoreError {
+        KvStoreErrorKind::PoisonedLockError.into()
+    }
+}
 pub type Result<TRes> = std::result::Result<TRes, KvStoreError>;
