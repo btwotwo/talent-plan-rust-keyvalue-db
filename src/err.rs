@@ -22,6 +22,9 @@ pub enum KvStoreErrorKind {
     #[fail(display = "Error serializing the command")]
     SerializationError,
 
+    #[fail(display = "Error deserializing from database file")]
+    DeserializationError,
+
     #[fail(display = "Error writing to the file. The file lock is poisoned")]
     PoisonedLockError,
 }
@@ -71,6 +74,12 @@ impl From<io::Error> for KvStoreError {
 impl From<bson::EncoderError> for KvStoreError {
     fn from(err: bson::EncoderError) -> KvStoreError {
         KvStoreErrorKind::SerializationError.into()
+    }
+}
+
+impl From<bson::DecoderError> for KvStoreError {
+    fn from(_: bson::DecoderError) -> Self {
+        KvStoreErrorKind::DeserializationError.into()
     }
 }
 
