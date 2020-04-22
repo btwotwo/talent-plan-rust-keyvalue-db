@@ -27,6 +27,9 @@ pub enum KvStoreErrorKind {
 
     #[fail(display = "Error writing to the file. The file lock is poisoned")]
     PoisonedLockError,
+
+    #[fail(display = "Key not found")]
+    KeyDoesNotExist,
 }
 
 impl Fail for KvStoreError {
@@ -67,12 +70,14 @@ impl From<Context<KvStoreErrorKind>> for KvStoreError {
 
 impl From<io::Error> for KvStoreError {
     fn from(err: io::Error) -> KvStoreError {
+        dbg!(err);
         KvStoreErrorKind::DatabaseFileError.into()
     }
 }
 
 impl From<bson::EncoderError> for KvStoreError {
     fn from(err: bson::EncoderError) -> KvStoreError {
+        dbg!(err);
         KvStoreErrorKind::SerializationError.into()
     }
 }
@@ -85,6 +90,7 @@ impl From<bson::DecoderError> for KvStoreError {
 
 impl From<PoisonError<RwLockWriteGuard<'_, File>>> for KvStoreError {
     fn from(err: PoisonError<RwLockWriteGuard<'_, File>>) -> KvStoreError {
+        dbg!(err);
         KvStoreErrorKind::PoisonedLockError.into()
     }
 }

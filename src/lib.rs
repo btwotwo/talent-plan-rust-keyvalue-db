@@ -1,20 +1,21 @@
 //! Simple key-value store for education purposes
 // #![deny(missing_docs)]
 pub mod err;
-use std::convert::TryInto;
-pub use err::Result;
+pub use err::{KvStoreErrorKind, Result};
 use std::io::Seek;
+use std::path::PathBuf;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufReader, Write};
 use std::path;
 use std::{ops::DerefMut, sync::RwLock};
 
 use bson;
-use bson::Bson;
+use bson::{Bson};
 use io::SeekFrom;
 use serde::{Deserialize, Serialize};
+use KvStoreErrorKind::KeyDoesNotExist;
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 enum Command {
@@ -38,7 +39,7 @@ enum Command {
 pub struct KvStore {
     /// File which store stores logs into
     db_file: RwLock<File>,
-    map: HashMap<String, String>
+    map: HashMap<String, String>,
 }
 
 impl KvStore {
@@ -52,39 +53,40 @@ impl KvStore {
         use std::fs::OpenOptions;
         let path = path.into();
 
-        let file = OpenOptions::new()
-            .read(true)
-            .open(&path)?;
+        fn create_file(path: &PathBuf) -> Result<File> {
+            Ok(OpenOptions::new()
+                .create(true)
+                .read(true)
+                .append(true)
+                .open(&path)?)
+        }
+
+        let file = create_file(&path)?;
 
         let map = KvStore::replay(file)?;
 
-        let file = OpenOptions::new()
-            .read(true)
-            .append(true)
-            .create(true)
-            .open(&path)?;
+        let file = create_file(&path)?;
 
         let locked_file = RwLock::new(file);
 
         Ok(KvStore {
             db_file: locked_file,
-            map
+            map,
         })
     }
 
-    fn replay(mut file: File) -> Result<HashMap<String, String>> {
-        // let mut file = BufReader::new(file);
+    fn replay(file: File) -> Result<HashMap<String, String>> {
+        let mut file = BufReader::new(file);
         let mut result = HashMap::<String, String>::new();
-        
-        let max_length: usize = file.seek(SeekFrom::End(0))?.try_into().unwrap();
-        file.seek(SeekFrom::Start(0))?;
-        
-        loop {
-            let mut buf = vec![0; 1];
-            file.read_exact(&mut buf)?;
-            let doc_length: usize = buf[0].into();
-            let current_pos = file.seek(SeekFrom::Current(-1))?;
+        let max_length = file.seek(SeekFrom::End(0))?;
 
+        if max_length == 0 {
+            return Ok(result);
+        };
+
+        file.seek(SeekFrom::Start(0))?;
+
+        loop {
             let doc = bson::decode_document(&mut file)?;
 
             match bson::from_bson(bson::Bson::Document(doc))? {
@@ -96,12 +98,10 @@ impl KvStore {
                 }
             };
 
-            let new_pos = doc_length + (current_pos as usize);
-
+            let new_pos = file.seek(SeekFrom::Current(0))?;
             if new_pos >= max_length {
                 break;
             }
-            file.seek(SeekFrom::Start(new_pos.try_into().unwrap()))?;
         }
 
         Ok(result)
@@ -116,15 +116,8 @@ impl KvStore {
     /// ```
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         let mut file = self.db_file.write()?;
-        let command = match bson::to_bson(&Command::Set { key, value })? {
-            Bson::Document(doc) => doc,
-            _ => unreachable!(),
-        };
-
-        bson::encode_document(&mut file.deref_mut(), &command)?;
-
-        file.flush()?;
-
+        let command = Command::Set { key, value };
+        serialize_command(command, &mut file)?;
         Ok(())
     }
 
@@ -140,7 +133,8 @@ impl KvStore {
     /// # Note
     /// Returns cloned value.
     pub fn get(&self, key: String) -> Result<Option<String>> {
-        unimplemented!()
+        let val = self.map.get(&key).map(|x| x.to_owned());
+        Ok(val)
     }
 
     /// Removes value with the given `key`
@@ -152,14 +146,23 @@ impl KvStore {
     /// kvstore.remove("foo".to_string());
     /// assert_eq!(kvstore.get("foo".to_string()), None);
     pub fn remove(&mut self, key: String) -> Result<()> {
-        let mut file = self.db_file.write()?;
-        let command = match bson::to_bson(&Command::Rm { key })? {
-            Bson::Document(doc) => doc,
-            _ => unreachable!(),
-        };
-        bson::encode_document(&mut file.deref_mut(), &command)?;
-        file.flush()?;
-        todo!("check for key existence");
-        Ok(())
+        if self.map.contains_key(&key) {
+            let mut file = self.db_file.write()?;
+            let command = Command::Rm { key };
+            serialize_command(command, &mut file)?;
+            Ok(())
+        } else {
+            Err(KeyDoesNotExist.into())
+        }
     }
+}
+
+fn serialize_command(command: Command, mut file: &mut File) -> Result<()> {
+    let command = match bson::to_bson(&command)? {
+        Bson::Document(doc) => doc,
+        _ => unreachable!(),
+    };
+    bson::encode_document(file.deref_mut(), &command)?;
+    file.flush()?;
+    Ok(())
 }

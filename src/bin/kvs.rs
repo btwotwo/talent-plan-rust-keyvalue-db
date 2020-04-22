@@ -1,5 +1,5 @@
 use clap::*;
-use kvs::KvStore;
+use kvs::{KvStoreErrorKind, KvStore};
 use std::process;
 
 macro_rules! sub {
@@ -17,24 +17,49 @@ fn main() {
         .author(crate_authors!())
         .get_matches();
 
-    let database_path = "foo.db";
-    let mut store = KvStore::open(database_path).unwrap();
+    let database_path = "bar.db";
+    let store = KvStore::open(database_path);
 
-    match matches.subcommand() {
-        sub!(get) => exit("unimplemented"),
+    let mut store = match store {
+        Ok(a) => a,
+        Err(e) => exit(&format!("{}", e)),
+    };
+
+    let result = match matches.subcommand() {
+        sub!(get) => {
+            let key = get.value_of("KEY").unwrap();
+
+            match store.get(key.to_owned()) {
+                Ok(Some(val)) => {
+                    println!("{}", val);
+                    process::exit(0);
+                },
+                Ok(None) => Err(KvStoreErrorKind::KeyDoesNotExist.into()),
+                Err(e) => Err(e)
+            }
+        },
         sub!(set) => {
             let key = set.value_of("KEY").unwrap();
             let val = set.value_of("VALUE").unwrap();
 
-            store.set(key.to_owned(), val.to_owned()).unwrap();
+            store.set(key.to_owned(), val.to_owned())
         }
-        sub!(rm) => exit("unimplemented"),
+        sub!(rm) => {
+            let key = rm.value_of("KEY").unwrap();
+
+            store.remove(key.to_owned())
+        }
 
         _ => exit("Invalid command"),
+    };
+
+    match result {
+        Ok(_) => process::exit(0),
+        Err(e) => exit(&format!("{}", e)),
     }
 }
 
 fn exit(error: &str) -> ! {
-    eprintln!("{}", error);
+    println!("{}", error);
     process::exit(1)
 }
