@@ -17,7 +17,7 @@ fn main() {
         .author(crate_authors!())
         .get_matches();
 
-    let database_path = "bar.db";
+    let database_path = ".";
     let store = KvStore::open(database_path);
 
     let mut store = match store {
@@ -34,7 +34,10 @@ fn main() {
                     println!("{}", val);
                     process::exit(0);
                 },
-                Ok(None) => Err(KvStoreErrorKind::KeyDoesNotExist.into()),
+                Ok(None) => {
+                    println!("{}", KvStoreErrorKind::KeyDoesNotExist);
+                    process::exit(0);
+                },
                 Err(e) => Err(e)
             }
         },

@@ -17,6 +17,8 @@ use io::SeekFrom;
 use serde::{Deserialize, Serialize};
 use KvStoreErrorKind::KeyDoesNotExist;
 
+type OffsetMap = HashMap<String, String>;
+
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 enum Command {
     #[serde(rename = "s")]
@@ -39,7 +41,7 @@ enum Command {
 pub struct KvStore {
     /// File which store stores logs into
     db_file: RwLock<File>,
-    map: HashMap<String, String>,
+    map: OffsetMap,
 }
 
 impl KvStore {
@@ -51,7 +53,8 @@ impl KvStore {
     /// ```
     pub fn open(path: impl Into<path::PathBuf>) -> Result<KvStore> {
         use std::fs::OpenOptions;
-        let path = path.into();
+        let mut path = path.into();
+        path.push("foo.db");
 
         fn create_file(path: &PathBuf) -> Result<File> {
             Ok(OpenOptions::new()
@@ -75,7 +78,7 @@ impl KvStore {
         })
     }
 
-    fn replay(file: File) -> Result<HashMap<String, String>> {
+    fn replay(file: File) -> Result<OffsetMap> {
         let mut file = BufReader::new(file);
         let mut result = HashMap::<String, String>::new();
         let max_length = file.seek(SeekFrom::End(0))?;
@@ -88,6 +91,7 @@ impl KvStore {
 
         loop {
             let doc = bson::decode_document(&mut file)?;
+            let new_pos = file.seek(SeekFrom::Current(0))?;
 
             match bson::from_bson(bson::Bson::Document(doc))? {
                 Command::Set { key, value } => {
@@ -98,7 +102,6 @@ impl KvStore {
                 }
             };
 
-            let new_pos = file.seek(SeekFrom::Current(0))?;
             if new_pos >= max_length {
                 break;
             }
