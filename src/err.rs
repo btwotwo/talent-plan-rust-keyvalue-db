@@ -30,6 +30,9 @@ pub enum KvStoreErrorKind {
 
     #[fail(display = "Key not found")]
     KeyDoesNotExist,
+
+    #[fail(display = "Error serializing command, got Rm command instead of Set command")]
+    CorruptedDatabaseEntry
 }
 
 impl Fail for KvStoreError {

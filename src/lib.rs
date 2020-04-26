@@ -17,7 +17,7 @@ use io::SeekFrom;
 use serde::{Deserialize, Serialize};
 use KvStoreErrorKind::KeyDoesNotExist;
 
-type OffsetMap = HashMap<String, String>;
+type OffsetMap = HashMap<String, u64>;
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 enum Command {
@@ -80,7 +80,7 @@ impl KvStore {
 
     fn replay(file: File) -> Result<OffsetMap> {
         let mut file = BufReader::new(file);
-        let mut result = HashMap::<String, String>::new();
+        let mut result = HashMap::<String, u64>::new();
         let max_length = file.seek(SeekFrom::End(0))?;
 
         if max_length == 0 {
@@ -90,18 +90,19 @@ impl KvStore {
         file.seek(SeekFrom::Start(0))?;
 
         loop {
+            let pos = file.seek(SeekFrom::Current(0))?;
             let doc = bson::decode_document(&mut file)?;
-            let new_pos = file.seek(SeekFrom::Current(0))?;
-
+            
             match bson::from_bson(bson::Bson::Document(doc))? {
                 Command::Set { key, value } => {
-                    result.insert(key, value);
+                    result.insert(key, pos);
                 }
                 Command::Rm { key } => {
                     result.remove(&key);
                 }
             };
-
+            
+            let new_pos = file.seek(SeekFrom::Current(0))?;
             if new_pos >= max_length {
                 break;
             }
@@ -136,8 +137,23 @@ impl KvStore {
     /// # Note
     /// Returns cloned value.
     pub fn get(&self, key: String) -> Result<Option<String>> {
-        let val = self.map.get(&key).map(|x| x.to_owned());
-        Ok(val)
+        let mut file = self.db_file.write()?;
+        let command_pos = match self.map.get(&key).map(|x| x.to_owned()) {
+            None => return Ok(None),
+            Some(val) => val
+        };
+        file.seek(SeekFrom::Start(command_pos))?;
+
+        let doc = bson::decode_document(&mut file.deref_mut())?;
+
+        match bson::from_bson(bson::Bson::Document(doc))? {
+            Command::Set { key: _, value } => {
+                Ok(Some(value))
+            }
+            Command::Rm { key: _ } => {
+                Err(KvStoreErrorKind::CorruptedDatabaseEntry.into())
+            }
+        }
     }
 
     /// Removes value with the given `key`
